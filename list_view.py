@@ -15,11 +15,12 @@ class TrackList(ft.ListView):
         self.points: List[Dict] = []
         self.idx: int = -1
 
-        # --- ★★★ アンドゥ履歴用スタック ★★★ ---
+        # アンドゥ履歴用スタック
         # (削除されたインデックス, 削除されたポイントデータ) のタプルのリスト
         self._undo_stack: List[Tuple[int, Dict]] = []
 
-        # --- 確認ダイアログ関連は削除済 ---
+        # 処理中フラグ
+        self._is_processing: bool = False
 
     def load_points(self, points: List[Dict]):
         """リストを更新し、アンドゥ履歴をクリア、最初の項目を選択"""
@@ -117,77 +118,81 @@ class TrackList(ft.ListView):
             new_control = self.controls[self.idx]
             if isinstance(new_control, ft.ListTile): new_control.bgcolor = ft.Colors.BLUE_50
 
-    # --- 削除処理メソッド (アンドゥスタック使用) ---
+    # --- 削除処理メソッド ---
     def _delete_point(self, e: ft.ControlEvent):
         """指定インデックスのポイントを削除し、アンドゥスタックに保存、外部に通知する。"""
-        idx_to_delete = e.control.data
-        if not (0 <= idx_to_delete < len(self.points)): return
-
-        print(f"Deleting point at index: {idx_to_delete}")
-        # --- アンドゥスタックに保存 ---
-        deleted_data = self.points[idx_to_delete].copy() # 必ずコピーを保存
-        self._undo_stack.append((idx_to_delete, deleted_data))
-        print(f"Undo stack size: {len(self._undo_stack)}")
-
-        # データ削除
-        del self.points[idx_to_delete]
-
-        self._refresh_list() # 再描画指示 (内部でupdateしない)
-        self.update()
-
-        # 削除後の選択決定
-        if self.idx >= 0:
-            # ★★★ update_selection を使わず直接コールバックとスクロール ★★★
-            # self.on_select_cb(self.idx)
-            offset = self.idx * self.ITEM_HEIGHT
-            self.scroll_to(offset=offset, duration=150)
-        # else:
-        #     self.on_select_cb(-1)
+        # --- ★★★ 処理中なら何もしない ★★★ ---
+        if self._is_processing:
+            print("[WARN] Delete operation already in progress. Ignoring.")
+            return
         
-        self.update()
+        # --- ★★★ 処理開始、フラグを立てる ★★★ ---
+        self._is_processing = True
+        print(f"Deleting point start...")
+        try:
+            idx_to_delete = e.control.data
+            if not (0 <= idx_to_delete < len(self.points)):
+                self._is_processing = False # 無効なインデックスならフラグを戻す
+                return
 
-        # データ変更通知 (Map更新と Undoボタン更新)
-        self.on_data_change_cb()
+            print(f"Deleting point at index: {idx_to_delete}")
+            # time.sleep(0.5) # ★ デバッグ: 意図的に遅延させてテストする場合 ★
+            deleted_data = self.points[idx_to_delete].copy()
+            self._undo_stack.append((idx_to_delete, deleted_data))
+            del self.points[idx_to_delete]
 
-        # 通知後に選択コールバックを呼ぶ？
-        if self.idx >= 0: self.on_select_cb(self.idx)
-        else: self.on_select_cb(-1)
+            self._refresh_list() # 再描画指示 (updateなし)
+            self.update()       # ListView 更新
+
+            # 削除後の選択決定と通知
+            if self.idx >= 0:
+                self.on_select_cb(self.idx)
+                offset = self.idx * self.ITEM_HEIGHT
+                self.scroll_to(offset=offset, duration=150)
+            else:
+                self.on_select_cb(-1)
+            self.on_data_change_cb()
+        finally:
+            # --- ★★★ 処理完了、フラグを下ろす ★★★ ---
+            print(f"Deleting point finished.")
+            self._is_processing = False
 
     # --- ★★★ アンドゥ処理メソッド (アンドゥスタック使用) ★★★ ---
     def undo_delete(self):
         """直前の削除操作を元に戻す。アンドゥスタックから復元する。"""
-        if not self._undo_stack: # スタックが空かチェック
-            print("アンドゥする削除操作がありません。")
-            return False # アンドゥ失敗
+        # --- ★★★ 処理中なら何もしない ★★★ ---
+        if self._is_processing:
+            print("[WARN] Undo operation already in progress. Ignoring.")
+            return False
 
-        # --- スタックから最後の削除操作を取得 ---
-        insert_idx, point_to_restore = self._undo_stack.pop()
-        print(f"アンドゥ実行: インデックス {insert_idx} にポイントを復元します。")
-        print(f"Undo stack size after pop: {len(self._undo_stack)}")
+        # --- ★★★ 処理開始、フラグを立てる ★★★ ---
+        self._is_processing = True
+        print(f"Undo delete start...")
+        result = False # アンドゥ成功フラグ
+        try:
+            if not self._undo_stack:
+                print("アンドゥする削除操作がありません。")
+                return False # result は False のまま
 
-        # 挿入位置のインデックスがリスト範囲内か確認 (基本的には問題ないはず)
-        if not (0 <= insert_idx <= len(self.points)):
-            print(f"[WARN] アンドゥ時の挿入インデックス {insert_idx} が不正です。末尾に追加します。")
-            insert_idx = len(self.points)
+            insert_idx, point_to_restore = self._undo_stack.pop()
+            print(f"アンドゥ実行: インデックス {insert_idx} にポイントを復元します。")
+            # time.sleep(0.5) # ★ デバッグ: 意図的に遅延させてテストする場合 ★
+            # ... (挿入位置チェック) ...
+            self.points.insert(insert_idx, point_to_restore)
 
-        # データを元の位置（または調整後位置）に挿入
-        self.points.insert(insert_idx, point_to_restore)
-
-        # 1. リスト内容を再構築 (updateは呼ばない)
-        self.idx = insert_idx
-        self._refresh_list()
-
-        # 2. ListViewの再構築結果をまずUIに反映させる
-        self.update()
-
-        # 3. UI更新後、スクロールを実行 (内部で再度 update が呼ばれる可能性あり)
-        offset = self.idx * self.ITEM_HEIGHT
-        self.scroll_to(offset=offset, duration=150)
-
-        # 4. 外部に通知
-        self.on_select_cb(self.idx)
-        self.on_data_change_cb()
-        return True
+            self.idx = insert_idx
+            self._refresh_list() # 再構築 (updateなし)
+            self.update()       # ListView 更新
+            offset = self.idx * self.ITEM_HEIGHT
+            self.scroll_to(offset=offset, duration=150)
+            self.on_select_cb(self.idx)
+            self.on_data_change_cb()
+            result = True # アンドゥ成功
+        finally:
+            # --- ★★★ 処理完了、フラグを下ろす ★★★ ---
+            print(f"Undo delete finished.")
+            self._is_processing = False
+        return result
 
     # --- アンドゥ可能か確認するためのプロパティ ---
     @property

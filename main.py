@@ -173,9 +173,6 @@ def main(page: ft.Page):
             initial_dir = str(current_file_path.parent) if current_file_path else str(Path.home())
             save_picker.save_file(dialog_title="名前を付けて保存",file_name=initial_filename, initial_directory=initial_dir, allowed_extensions=["gpx"])
 
-    # キーボードハンドラは削除 (機能しないため)
-    # page.on_keyboard_event = on_keyboard
-
     # --- レイアウト定義 (左パネル下にクレジット表示追加) ---
     left_panel = ft.Stack( # ★★★ Column から Stack に戻す ★★★
         [
