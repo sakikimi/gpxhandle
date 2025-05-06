@@ -1,8 +1,11 @@
 """
+gpxhandle/gpx_handler.py
+
 GPX 読み書きユーティリティ
 - 読込時に UTC→JST(+9h) へ変換
 - 書出時に JST→UTC へ戻して出力
 """
+
 from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -12,7 +15,7 @@ import gpxpy.gpx
 
 # タイムゾーン定義
 UTC = timezone.utc
-JST = timezone(timedelta(hours=9), 'JST')  # JSTタイムゾーンを明示的に定義
+JST = timezone(timedelta(hours=9), 'JST')
 
 # ポイントデータの型エイリアス
 Point = Dict[str, Any]  # {"lat":float, "lon":float, "ele":float, "time":datetime|None}
@@ -112,4 +115,3 @@ def save_gpx(points: List[Point], dst: str | Path, trk_name: str) -> None:
             fp.write(gpx.to_xml(prettyprint=True))
     except Exception as e:
         raise IOError(f"GPXファイルの保存に失敗しました: {e}") from e
-    
